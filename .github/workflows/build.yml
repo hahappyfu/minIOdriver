@@ -38,8 +38,36 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tagName: v__VERSION__
-        releaseName: 'MinIO Drive v__VERSION__'
-        releaseBody: 'MinIO Drive - MinIO 文件管理工具'
+        tagName: v0.1.0
+        releaseName: 'MinIO Drive v0.1.0'
+        releaseBody: |
+          ## MinIO Drive v0.1.0
+
+          MinIO 文件管理工具 - 将 MinIO Bucket 映射为 Windows 本地盘符
+
+          ### 新功能
+          - MinIO 连接配置管理（支持多服务器）
+          - Bucket 列表查看
+          - 一键挂载 Bucket 为本地盘符
+          - 多 Bucket 并发挂载
+          - 系统托盘管理（最小化到托盘）
+          - 开机自动启动
+
+          ### 使用方法
+          1. 下载并安装 [WinFsp](https://winfsp.dev/rel/)（rclone 挂载依赖）
+          2. 运行 MinIO Drive
+          3. 点击"添加连接"，输入 MinIO 服务器信息
+          4. 选择 Bucket，分配盘符，点击"挂载"
+          5. 在 Windows 资源管理器中访问挂载的盘符
+
+          ### 技术栈
+          - Tauri 2.x + React + TypeScript
+          - rclone（底层挂载引擎）
+          - Ant Design（UI 组件库）
+
+          ### 支持
+          - Windows 10/11
+          - macOS（需安装 macFUSE）
         releaseDraft: true
         prerelease: false
+        uploadArtifacts: true
