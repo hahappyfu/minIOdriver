@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { Connection, Bucket, MountInfo } from '../types'
+import type { Connection, Bucket, MountInfo, CacheConfig } from '../types'
 
 // 连接管理
 export async function testConnection(endpoint: string, accessKey: string, secretKey: string): Promise<boolean> {
@@ -63,4 +63,17 @@ export async function exportConfig(path: string): Promise<void> {
 
 export async function importConfig(path: string): Promise<void> {
   await invoke('import_config', { path })
+}
+
+// 缓存配置
+export async function getCacheConfig(): Promise<CacheConfig> {
+  return await invoke('get_cache_config')
+}
+
+export async function saveCacheConfig(config: CacheConfig): Promise<void> {
+  await invoke('save_cache_config', { config })
+}
+
+export async function clearCache(config?: CacheConfig): Promise<string> {
+  return await invoke('clear_cache', { config })
 }

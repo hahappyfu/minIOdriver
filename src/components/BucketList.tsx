@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Card, Table, Select, Button, message, Space, Tag } from 'antd'
-import { PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons'
+import { listen } from '@tauri-apps/api/event'
 import type { Bucket, MountInfo } from '../types'
 import { listBuckets, mountBucket, unmountBucket, getMountStatus } from '../hooks/useRclone'
 
@@ -21,6 +22,68 @@ const BucketList: React.FC<Props> = ({ connectionId }) => {
   useEffect(() => {
     if (connectionId) {
       loadData()
+    }
+  }, [connectionId])
+
+  // 监听 rclone 状态变化事件
+  useEffect(() => {
+    const unlisten = listen('rclone:status_changed', () => {
+      // 状态变化时刷新数据
+      loadData()
+    })
+
+    return () => {
+      unlisten.then(fn => fn())
+    }
+  }, [])
+
+  // 监听 rclone 进程终止事件
+  useEffect(() => {
+    const unlisten = listen('rclone:terminated', () => {
+      loadData()
+    })
+
+    return () => {
+      unlisten.then(fn => fn())
+    }
+  }, [])
+
+  // 监听重连失败事件
+  useEffect(() => {
+    const unlisten = listen('rclone:reconnect_failed', (event) => {
+      message.error(`挂载 ${event.payload} 重连失败，请手动重新挂载`)
+    })
+
+    return () => {
+      unlisten.then(fn => fn())
+    }
+  }, [])
+
+  // 定时轮询挂载状态
+  useEffect(() => {
+    if (!connectionId) return
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const mountList = await getMountStatus()
+        setMounts(mountList)
+
+        // 同时更新 bucket 列表的挂载状态
+        setBuckets(prev => prev.map(bucket => {
+          const mount = mountList.find(m => m.bucket === bucket.name)
+          return {
+            ...bucket,
+            mounted: mount !== undefined && mount.status !== 'error',
+            drive: mount?.drive || null,
+          }
+        }))
+      } catch (error) {
+        console.error('轮询挂载状态失败:', error)
+      }
+    }, 5000) // 每5秒轮询一次
+
+    return () => {
+      clearInterval(pollInterval)
     }
   }, [connectionId])
 
@@ -109,14 +172,16 @@ const BucketList: React.FC<Props> = ({ connectionId }) => {
         const mount = mounts.find(m => m.bucket === record.name)
         if (!mount) return <Tag>未挂载</Tag>
 
-        const statusMap: Record<string, { color: string; text: string }> = {
-          mounting: { color: 'processing', text: '挂载中' },
-          mounted: { color: 'success', text: '已挂载' },
+        const statusMap: Record<string, { color: string; text: string; icon?: React.ReactNode }> = {
+          connecting: { color: 'processing', text: '挂载中', icon: <SyncOutlined spin /> },
+          connected: { color: 'success', text: '已挂载' },
+          disconnected: { color: 'error', text: '已断开' },
+          reconnecting: { color: 'warning', text: '重连中...', icon: <SyncOutlined spin /> },
           error: { color: 'error', text: '错误' },
         }
 
         const status = statusMap[mount.status] || { color: 'default', text: mount.status }
-        return <Tag color={status.color}>{status.text}</Tag>
+        return <Tag color={status.color} icon={status.icon}>{status.text}</Tag>
       },
     },
     {

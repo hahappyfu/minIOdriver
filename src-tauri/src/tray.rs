@@ -195,7 +195,7 @@ async fn handle_quick_mount(app: &tauri::AppHandle) {
         )
     };
 
-    let bucket_names = match crate::rclone::list_buckets(&endpoint, &access_key, &secret_key).await
+    let bucket_names = match crate::rclone::list_buckets(app, &endpoint, &access_key, &secret_key).await
     {
         Ok(buckets) => buckets,
         Err(e) => {

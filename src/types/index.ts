@@ -22,4 +22,11 @@ export interface MountInfo {
 }
 
 // 挂载状态类型
-export type MountStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
+export type MountStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error'
+
+// 缓存配置
+export interface CacheConfig {
+  cache_dir: string      // 缓存目录路径
+  max_size_gb: number    // 缓存大小上限（GB）
+  max_age_hours: number  // 缓存过期时间（小时）
+}
