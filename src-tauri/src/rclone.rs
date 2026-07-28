@@ -25,14 +25,10 @@ fn init_log_file() -> std::fs::File {
 
 pub struct RcloneProcess {
     child: CommandChild,
-    config_path: std::path::PathBuf,
 }
 
 impl RcloneProcess {
     pub fn kill(self) -> Result<()> {
-        // 先清理配置文件
-        let _ = std::fs::remove_file(&self.config_path);
-
         self.child.kill().context("Failed to kill rclone process")?;
         Ok(())
     }
@@ -87,11 +83,6 @@ pub async fn test_connection(
     access_key: &str,
     secret_key: &str,
 ) -> Result<bool> {
-    // 生成临时配置文件供 rclone 使用
-    let config_path = generate_rclone_config(endpoint, access_key, secret_key)?;
-    let config_for_cleanup = config_path.clone();
-    let config_str = config_path.to_string_lossy().to_string();
-
     // 克隆为 owned 值以满足异步命令的 'static 要求
     let ep = endpoint.to_string();
     let ak = access_key.to_string();
@@ -103,32 +94,24 @@ pub async fn test_connection(
         .sidecar("rclone")
         .context("Failed to get rclone sidecar")?;
 
+    // 使用内联参数，不依赖配置文件
+    let remote = format!(
+        ":s3,provider=Minio,endpoint={ep},access_key_id={ak},secret_access_key={sk}:"
+    );
+
     // 使用 10 秒超时防止卡死
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(10),
         sidecar
             .args([
                 "lsd",
-                "minio:",
-                "--config",
-                &config_str,
-                "--s3-provider",
-                "Minio",
-                "--s3-endpoint",
-                &ep,
-                "--s3-access-key-id",
-                &ak,
-                "--s3-secret-access-key",
-                &sk,
+                &remote,
                 "--max-depth",
                 "0",
             ])
             .output(),
     )
     .await;
-
-    // 无论成功失败都清理临时配置文件
-    let _ = std::fs::remove_file(&config_for_cleanup);
 
     match result {
         Ok(Ok(output)) => Ok(output.status.success()),
@@ -144,11 +127,6 @@ pub async fn list_buckets(
     access_key: &str,
     secret_key: &str,
 ) -> Result<Vec<String>> {
-    // 生成临时配置文件
-    let config_path = generate_rclone_config(endpoint, access_key, secret_key)?;
-    let config_for_cleanup = config_path.clone();
-    let config_str = config_path.to_string_lossy().to_string();
-
     let ep = endpoint.to_string();
     let ak = access_key.to_string();
     let sk = secret_key.to_string();
@@ -159,29 +137,21 @@ pub async fn list_buckets(
         .sidecar("rclone")
         .context("Failed to get rclone sidecar")?;
 
+    // 使用内联参数，不依赖配置文件
+    let remote = format!(
+        ":s3,provider=Minio,endpoint={ep},access_key_id={ak},secret_access_key={sk}:"
+    );
+
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(10),
         sidecar
             .args([
                 "lsd",
-                "minio:",
-                "--config",
-                &config_str,
-                "--s3-provider",
-                "Minio",
-                "--s3-endpoint",
-                &ep,
-                "--s3-access-key-id",
-                &ak,
-                "--s3-secret-access-key",
-                &sk,
+                &remote,
             ])
             .output(),
     )
     .await;
-
-    // 清理临时配置文件
-    let _ = std::fs::remove_file(&config_for_cleanup);
 
     let output = match result {
         Ok(Ok(output)) => output,
@@ -215,9 +185,6 @@ pub async fn start_mount(
     bucket: &str,
     drive: &str,
 ) -> Result<RcloneProcess> {
-    // 生成临时 rclone 配置
-    let config_path = generate_rclone_config(endpoint, access_key, secret_key)?;
-
     // 读取缓存配置
     let cache_config = crate::load_cache_config().unwrap_or_default();
 
@@ -226,17 +193,20 @@ pub async fn start_mount(
         .sidecar("rclone")
         .context("Failed to get rclone sidecar")?;
 
-    let config_path_str = config_path.to_string_lossy().to_string();
     let bucket_clone = bucket.to_string();
     let cache_max_size = format!("{}G", cache_config.max_size_gb);
     let cache_max_age = format!("{}h", cache_config.max_age_hours);
 
+    // 使用内联参数，不依赖配置文件
+    let remote = format!(
+        ":s3,provider=Minio,endpoint={endpoint},access_key_id={access_key},secret_access_key={secret_key},bucket_region=:"
+    );
+
     let (mut rx, child) = sidecar
         .args([
             "mount",
-            &format!("minio:{}", bucket),
+            &remote,
             &format!("{}:", drive),
-            "--config", &config_path_str,
             "--vfs-cache-mode", "full",
             "--volname", &format!("MinIO-{}", bucket),
             "--vfs-cache-max-size", &cache_max_size,
@@ -373,29 +343,20 @@ pub async fn start_mount(
                                 }
                             };
 
-                            // 生成新的配置文件
-                            let new_config_path = match generate_rclone_config(
-                                &mount_config.endpoint,
-                                &mount_config.access_key,
-                                &mount_config.secret_key,
-                            ) {
-                                Ok(p) => p,
-                                Err(e) => {
-                                    eprintln!("Failed to generate config: {}", e);
-                                    continue;
-                                }
-                            };
+                            // 使用内联参数，不依赖配置文件
+                            let remote = format!(
+                                ":s3,provider=Minio,endpoint={},access_key_id={},secret_access_key={},bucket_region=:",
+                                mount_config.endpoint, mount_config.access_key, mount_config.secret_key
+                            );
 
-                            let new_config_str = new_config_path.to_string_lossy().to_string();
                             let cache_config = crate::load_cache_config().unwrap_or_default();
                             let cache_max_size = format!("{}G", cache_config.max_size_gb);
                             let cache_max_age = format!("{}h", cache_config.max_age_hours);
 
                             match sidecar.args([
                                 "mount",
-                                &format!("minio:{}", mount_config.bucket),
+                                &remote,
                                 &format!("{}:", mount_config.drive),
-                                "--config", &new_config_str,
                                 "--vfs-cache-mode", "full",
                                 "--volname", &format!("MinIO-{}", mount_config.bucket),
                                 "--vfs-cache-max-size", &cache_max_size,
@@ -419,7 +380,6 @@ pub async fn start_mount(
                                             // 创建新的 RcloneProcess 并插入
                                             let new_process = RcloneProcess {
                                                 child: new_child,
-                                                config_path: new_config_path,
                                             };
                                             processes.insert(bucket_clone.clone(), new_process);
                                         }
@@ -432,7 +392,6 @@ pub async fn start_mount(
                                 }
                                 Err(e) => {
                                     eprintln!("重连失败: {}", e);
-                                    let _ = std::fs::remove_file(&new_config_path);
                                 }
                             }
                         }
@@ -477,19 +436,16 @@ pub async fn start_mount(
             println!("rclone mount succeeded for {}", bucket);
             Ok(RcloneProcess {
                 child,
-                config_path,
             })
         }
         Ok(Ok(false)) => {
             // 挂载失败，进程可能还在运行，需要清理
             let _ = child.kill();
-            let _ = std::fs::remove_file(&config_path);
             anyhow::bail!("rclone mount failed")
         }
         Ok(Err(_)) => {
             // channel 被关闭
             let _ = child.kill();
-            let _ = std::fs::remove_file(&config_path);
             anyhow::bail!("rclone mount channel closed unexpectedly")
         }
         Err(_) => {
@@ -497,36 +453,7 @@ pub async fn start_mount(
             println!("rclone mount timeout, assuming success for {}", bucket);
             Ok(RcloneProcess {
                 child,
-                config_path,
             })
         }
     }
-}
-
-/// 生成临时 rclone 配置文件
-fn generate_rclone_config(endpoint: &str, access_key: &str, secret_key: &str) -> Result<std::path::PathBuf> {
-    let config_dir = dirs::config_dir()
-        .context("Failed to get config directory")?
-        .join("minio-drive");
-
-    std::fs::create_dir_all(&config_dir)?;
-
-    let config_path = config_dir.join("rclone.conf");
-
-    let config_content = format!(
-        r#"[minio]
-type = s3
-provider = Minio
-env_auth = false
-access_key_id = {access_key}
-secret_access_key = {secret_key}
-region =
-endpoint = {endpoint}
-acl = private
-"#
-    );
-
-    std::fs::write(&config_path, config_content)?;
-
-    Ok(config_path)
 }
