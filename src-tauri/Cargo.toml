@@ -17,3 +17,6 @@ keyring = "3"
 dirs = "5"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
