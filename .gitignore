@@ -10,6 +10,8 @@ src-tauri/target/
 *.exe
 *.dll
 *.dylib
+# 允许 rclone 二进制
+!src-tauri/binaries/*.exe
 
 # macOS 系统文件
 .DS_Store
