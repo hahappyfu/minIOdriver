@@ -1,0 +1,18 @@
+# 依赖目录
+node_modules/
+
+# 构建产物
+dist/
+target/
+src-tauri/target/
+
+# 编译输出
+*.exe
+*.dll
+*.dylib
+
+# macOS 系统文件
+.DS_Store
+
+# 日志文件
+*.log
